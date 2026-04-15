@@ -1,0 +1,38 @@
+{
+  "name": "discord-leads-bot",
+  "version": "1.0.0",
+  "description": "Bot Discord de génération de leads locaux via Google Places API",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "deploy-commands": "tsx src/deploy-commands.ts"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "discord",
+    "leads",
+    "google-places",
+    "scrapper"
+  ],
+  "license": "PRIVATE",
+  "dependencies": {
+    "better-sqlite3": "^11.7.0",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.7",
+    "nodemailer": "^8.0.1",
+    "uuid": "^10.0.0",
+    "winston": "^3.17.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.0",
+    "@types/nodemailer": "^7.0.9",
+    "@types/uuid": "^10.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
