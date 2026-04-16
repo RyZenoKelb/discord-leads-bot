@@ -28,6 +28,7 @@ import { data as pipelineData }   from "./bot/commands/pipeline";
 import { data as leadSearchData } from "./bot/commands/leadSearch";
 import { data as blacklistData }  from "./bot/commands/blacklist";
 import { data as recapData }      from "./bot/commands/recap";
+import { data as huntData }       from "./bot/commands/hunt";
 
 const commands = [
   scanData.toJSON(),
@@ -51,6 +52,7 @@ const commands = [
   leadSearchData.toJSON(),
   blacklistData.toJSON(),
   recapData.toJSON(),
+  huntData.toJSON(),
 ];
 
 export async function deployCommands(clientId: string): Promise<void> {

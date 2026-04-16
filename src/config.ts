@@ -74,6 +74,10 @@ export const config = {
   // ─── Daily Stats ──────────────────────────────
   /** Heure du post quotidien (HH:MM, heure Israël) */
   dailyStatsTime: process.env.DAILY_STATS_TIME || "21:00",
+
+  // ─── Mode Hunt ──────────────────────────────────
+  /** Clé API SerpAPI (optionnel — mode Hunt avancé) */
+  serpApiKey: process.env.SERP_API_KEY || "",
 } as const;
 
 /** Domaines prédéfinis : alias → liste de queries Google */

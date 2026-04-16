@@ -2,10 +2,11 @@
  * modals.ts — Gère les interactions modales Discord.
  *
  * Modales :
- *   - add_note:{placeId}     — Ajouter une note/commentaire
- *   - callback_reason:{placeId} — Raison de rappel
- *   - log_meeting:{placeId}  — Logger un rendez-vous
- *   - log_revenue:{placeId}  — Logger du revenu (deal conclu)
+ *   - add_note:{placeId}         — Ajouter une note/commentaire
+ *   - callback_reason:{placeId}  — Raison de rappel
+ *   - log_meeting:{placeId}      — Logger un rendez-vous
+ *   - log_revenue:{placeId}      — Logger du revenu (deal conclu)
+ *   - contact_request:{encoded}  — Contacter un prospect Hunt
  */
 
 import {
@@ -15,6 +16,8 @@ import {
 import {
   addLeadNote,
   getLeadByPlaceId,
+  getWebRequestById,
+  updateWebRequestStatus,
   logActivity,
   markLeadCalled,
 } from "../../db/queries";
@@ -24,34 +27,13 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
   const customId = interaction.customId;
 
   try {
-    // ─── Add Note ────────────────────────────────
-    if (customId.startsWith("add_note:")) {
-      await handleAddNote(interaction);
-      return;
-    }
+    if (customId.startsWith("add_note:"))          { await handleAddNote(interaction);        return; }
+    if (customId.startsWith("callback_reason:"))   { await handleCallbackReason(interaction); return; }
+    if (customId.startsWith("log_meeting:"))       { await handleLogMeeting(interaction);     return; }
+    if (customId.startsWith("log_revenue:"))       { await handleLogRevenue(interaction);     return; }
+    if (customId.startsWith("contact_request:"))   { await handleContactRequest(interaction); return; }
 
-    // ─── Callback Reason ─────────────────────────
-    if (customId.startsWith("callback_reason:")) {
-      await handleCallbackReason(interaction);
-      return;
-    }
-
-    // ─── Log Meeting ─────────────────────────────
-    if (customId.startsWith("log_meeting:")) {
-      await handleLogMeeting(interaction);
-      return;
-    }
-
-    // ─── Log Revenue ─────────────────────────────
-    if (customId.startsWith("log_revenue:")) {
-      await handleLogRevenue(interaction);
-      return;
-    }
-
-    await interaction.reply({
-      content: "❌ Modale inconnue.",
-      flags: MessageFlags.Ephemeral,
-    });
+    await interaction.reply({ content: "❌ Modale inconnue.", flags: MessageFlags.Ephemeral });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     logger.error(`❌ Erreur modale ${customId}: ${msg}`);
@@ -61,11 +43,10 @@ export async function handleModal(interaction: ModalSubmitInteraction): Promise<
       } else {
         await interaction.reply({ content: `❌ Erreur: ${msg}`, flags: MessageFlags.Ephemeral });
       }
-    } catch {
-      // Silent
-    }
+    } catch { /* Silent */ }
   }
 }
+
 
 // ─── Add Note Handler ──────────────────────────────
 
@@ -255,4 +236,49 @@ async function handleLogRevenue(interaction: ModalSubmitInteraction): Promise<vo
   });
 
   logger.info(`💰 Revenue ${amount}€ pour ${placeId} par ${interaction.user.tag}`);
+}
+
+// ─── Contact Hunt Request Handler ──────────────────
+
+async function handleContactRequest(interaction: ModalSubmitInteraction): Promise<void> {
+  const wrId  = parseInt(interaction.customId.split(":")[1] ?? "0", 10);
+  const notes = interaction.fields.getTextInputValue("contact_notes").trim();
+  let method  = "";
+  try { method = interaction.fields.getTextInputValue("contact_method")?.trim() ?? ""; } catch { /* optional */ }
+
+  if (!wrId) {
+    await interaction.reply({ content: "❌ ID invalide.", flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const wr = getWebRequestById(wrId);
+  if (!wr) {
+    await interaction.reply({ content: "❌ Demande introuvable.", flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  updateWebRequestStatus(wrId, "CONTACTED", notes || undefined);
+
+  if (interaction.guildId) {
+    logActivity({
+      guild_id: interaction.guildId,
+      user_id:  interaction.user.id,
+      user_tag: interaction.user.tag,
+      type:     "call",
+      details:  `[Hunt] Contacté: ${wr.url?.substring(0, 80)}${method ? ` via ${method}` : ""}`,
+      revenue:  0,
+    });
+  }
+
+  await interaction.reply({
+    content: [
+      `📩 **Contact enregistré !**`,
+      `> 🌐 **Source :** [Voir le post](${wr.url})`,
+      method ? `> 📬 **Méthode :** ${method}` : "",
+      notes  ? `> 📝 **Notes :** ${notes.substring(0, 200)}` : "",
+    ].filter(Boolean).join("\n"),
+    flags: MessageFlags.Ephemeral,
+  });
+
+  logger.info(`📩 Hunt contact logged pour WR#${wrId} par ${interaction.user.tag}`);
 }

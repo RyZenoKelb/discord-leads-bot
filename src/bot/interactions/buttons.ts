@@ -6,6 +6,7 @@
  * Boutons call queue: cq_next, cq_done, cq_claim, cq_check, cq_ignore, cq_fu3, cq_fu7,
  *                     cq_comment, cq_callback_reason, cq_email, cq_find_email, cq_meeting, cq_revenue
  * Boutons followup:  fu_done, fu_postpone3, fu_ignore
+ * Boutons hunt:      wr_contact, wr_save, wr_ignore
  */
 
 import {
@@ -32,6 +33,9 @@ import {
   addLeadEmail,
   logActivity,
   markLeadCalled,
+  getWebRequestById,
+  updateWebRequestStatus,
+  upsertWebRequest,
 } from "../../db/queries";
 import {
   buildStatusTag,
@@ -76,6 +80,12 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
     // ─── Followup buttons ─────────────────────────
     if (customId.startsWith("fu_")) {
       await handleFollowupButton(interaction);
+      return;
+    }
+
+    // ─── Hunt buttons ───────────────────────────
+    if (customId.startsWith("wr_")) {
+      await handleHuntButton(interaction);
       return;
     }
 
@@ -780,5 +790,107 @@ async function handleScanActionButton(interaction: ButtonInteraction): Promise<v
 
     default:
       await interaction.reply({ content: "❌ Action inconnue.", flags: MessageFlags.Ephemeral });
+  }
+}
+
+// ─── Hunt Button Handler ──────────────────────────────
+
+async function handleHuntButton(interaction: ButtonInteraction): Promise<void> {
+  const [action, encoded] = interaction.customId.split(":");
+  if (!encoded) {
+    await interaction.reply({ content: "❌ Bouton invalide.", flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  // Decode the URL from base64
+  let url = "";
+  try {
+    // Pad base64 if needed
+    const padded = encoded + "=".repeat((4 - (encoded.length % 4)) % 4);
+    url = Buffer.from(padded, "base64").toString("utf8");
+  } catch {
+    await interaction.reply({ content: "❌ Lien invalide.", flags: MessageFlags.Ephemeral });
+    return;
+  }
+
+  const guildId = interaction.guildId ?? "";
+
+  switch (action) {
+    // ─── Contacter : ouvre une modale ────────────────
+    case "wr_contact": {
+      // Find by URL in DB
+      const { getDb } = await import("../../db/schema");
+      const db = getDb();
+      const wr = db.prepare("SELECT id FROM web_requests WHERE url = ?").get(url) as { id: number } | undefined;
+      const wrId = wr?.id ?? 0;
+
+      const modal = new ModalBuilder()
+        .setCustomId(`contact_request:${wrId}`)
+        .setTitle("📩 Contacter ce Prospect")
+        .addComponents(
+          new ActionRowBuilder<TextInputBuilder>().addComponents(
+            new TextInputBuilder()
+              .setCustomId("contact_method")
+              .setLabel("Methode de contact")
+              .setPlaceholder("Ex: Message Reddit, DM Instagram, Email, Appel...")
+              .setStyle(TextInputStyle.Short)
+              .setRequired(false)
+              .setMaxLength(100)
+          ),
+          new ActionRowBuilder<TextInputBuilder>().addComponents(
+            new TextInputBuilder()
+              .setCustomId("contact_notes")
+              .setLabel("Notes")
+              .setPlaceholder("Ex: A l'air intéressé, proposa devis 1200€...")
+              .setStyle(TextInputStyle.Paragraph)
+              .setRequired(false)
+              .setMaxLength(500)
+          ),
+        );
+      await interaction.showModal(modal);
+      return;
+    }
+
+    // ─── Sauvegarder comme lead ────────────────────
+    case "wr_save": {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      if (guildId) {
+        logActivity({
+          guild_id: guildId,
+          user_id: interaction.user.id,
+          user_tag: interaction.user.tag,
+          type: "lead_scanned",
+          details: `[Hunt saved] ${url.substring(0, 80)}`,
+          revenue: 0,
+        });
+      }
+      await interaction.editReply(
+        `✅ Sauvegardé ! Le post a été marqué dans ta base.\n> 🔗 <${url}>`
+      );
+      return;
+    }
+
+    // ─── Ignorer ───────────────────────────────
+    case "wr_ignore": {
+      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      // Lookup by URL and mark ignored
+      const { getDb: getDatabase } = await import("../../db/schema");
+      const database = getDatabase();
+      const wrRow = database.prepare("SELECT id FROM web_requests WHERE url = ?").get(url) as { id: number } | undefined;
+      if (wrRow?.id) updateWebRequestStatus(wrRow.id, "IGNORE");
+      try {
+        const msgEmbed = interaction.message.embeds[0];
+        if (msgEmbed) {
+          const { EmbedBuilder: EB } = await import("discord.js");
+          await interaction.message.edit({ embeds: [EB.from(msgEmbed).setColor(0x4F545C)], components: [] });
+        }
+      } catch { /* Can't edit */ }
+      await interaction.editReply("⛔ Demande ignorée.");
+      logger.info(`⛔ Hunt WR ignored: ${url.substring(0, 60)} par ${interaction.user.tag}`);
+      return;
+    }
+
+    default:
+      await interaction.reply({ content: "❌ Action Hunt inconnue.", flags: MessageFlags.Ephemeral });
   }
 }

@@ -40,6 +40,7 @@ import * as pipelineCommand from "./bot/commands/pipeline";
 import * as leadSearchCommand from "./bot/commands/leadSearch";
 import * as blacklistCommand from "./bot/commands/blacklist";
 import * as recapCommand from "./bot/commands/recap";
+import * as huntCommand from "./bot/commands/hunt";
 
 // Interactions
 import { handleButton } from "./bot/interactions/buttons";
@@ -83,6 +84,7 @@ const commandHandlers: Record<string, (i: ChatInputCommandInteraction) => Promis
   lead_search: leadSearchCommand.execute,
   blacklist:   blacklistCommand.execute,
   recap:       recapCommand.execute,
+  hunt:        huntCommand.execute,
 };
 
 // ─── Events ────────────────────────────────────────
@@ -186,7 +188,8 @@ function startRotatingStatus(botClient: Client): void {
         { text: `📊 ${counts.totalScanned} leads scannés`, type: ActivityType.Custom },
         { text: `📞 ${counts.toCall} leads à appeler`, type: ActivityType.Custom },
         { text: `✅ ${counts.concluded} leads conclus`, type: ActivityType.Custom },
-        { text: `🔍 /scan pour chercher des leads`, type: ActivityType.Custom },
+        { text: `🎯 ${counts.webRequests} demandes détectées`, type: ActivityType.Custom },
+        { text: `🔍 /scan ou /hunt pour prospecter`, type: ActivityType.Custom },
       ];
 
       const current = statuses[statusIndex % statuses.length];

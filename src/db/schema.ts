@@ -154,6 +154,29 @@ function createTables(): void {
     );
   `);
 
+  // ─── Web Requests (Mode Hunt) ─────────────────
+  d.exec(`
+    CREATE TABLE IF NOT EXISTS web_requests (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      source          TEXT    NOT NULL,
+      url             TEXT    UNIQUE NOT NULL,
+      title           TEXT,
+      snippet         TEXT,
+      author          TEXT,
+      domain          TEXT    DEFAULT 'other',
+      location        TEXT,
+      request_type    TEXT    DEFAULT 'vitrine',
+      relevance_score INTEGER DEFAULT 0,
+      language        TEXT    DEFAULT 'fr',
+      posted_at       TEXT,
+      detected_at     TEXT    DEFAULT (datetime('now')),
+      status          TEXT    DEFAULT 'NEW',
+      guild_id        TEXT,
+      notes           TEXT,
+      contact         TEXT
+    );
+  `);
+
   logger.info("✅ Tables créées / vérifiées.");
 }
 
@@ -199,6 +222,13 @@ function runMigrations(): void {
   d.exec(`CREATE INDEX IF NOT EXISTS idx_activities_guild_date ON activities (guild_id, created_at)`);
   d.exec(`CREATE INDEX IF NOT EXISTS idx_activities_user ON activities (user_id, created_at)`);
   d.exec(`CREATE INDEX IF NOT EXISTS idx_leads_email_status ON leads (email_status)`);
+
+  // ─── Web Requests indexes ─────────────────────
+  d.exec(`CREATE INDEX IF NOT EXISTS idx_wr_guild_status ON web_requests (guild_id, status)`);
+  d.exec(`CREATE INDEX IF NOT EXISTS idx_wr_domain ON web_requests (domain)`);
+  d.exec(`CREATE INDEX IF NOT EXISTS idx_wr_source ON web_requests (source)`);
+  d.exec(`CREATE INDEX IF NOT EXISTS idx_wr_score ON web_requests (relevance_score DESC)`);
+  d.exec(`CREATE INDEX IF NOT EXISTS idx_wr_detected ON web_requests (detected_at DESC)`);
 
   if (migrated > 0) {
     logger.info(`✅ ${migrated} migration(s) appliquée(s).`);

@@ -782,6 +782,7 @@ export interface GlobalLeadCounts {
   totalScanned: number;
   toCall: number;
   concluded: number;
+  webRequests: number;
 }
 
 /** Compte global des leads toutes guilds confondues (pour le statut du bot) */
@@ -790,5 +791,150 @@ export function getGlobalLeadCounts(): GlobalLeadCounts {
   const totalScanned = (db.prepare("SELECT COUNT(*) as c FROM leads").get() as { c: number }).c;
   const toCall = (db.prepare("SELECT COUNT(*) as c FROM leads WHERE status IN ('CALL', 'CHECK', 'NEW')").get() as { c: number }).c;
   const concluded = (db.prepare("SELECT COUNT(*) as c FROM leads WHERE status = 'DONE'").get() as { c: number }).c;
-  return { totalScanned, toCall, concluded };
+  const webRequests = (db.prepare("SELECT COUNT(*) as c FROM web_requests WHERE status = 'NEW'").get() as { c: number }).c;
+  return { totalScanned, toCall, concluded, webRequests };
+}
+
+// ─── Web Requests (Mode Hunt) ──────────────────────
+
+export interface WebRequest {
+  id?: number;
+  source: string;
+  url: string;
+  title?: string;
+  snippet?: string;
+  author?: string;
+  domain: string;
+  location?: string;
+  request_type: string;
+  relevance_score: number;
+  language: string;
+  posted_at?: string;
+  detected_at?: string;
+  status: string;         // NEW, CONTACTED, IGNORE, SAVED
+  guild_id?: string;
+  notes?: string;
+  contact?: string;
+}
+
+/** Insère ou ignore une web request (déduplique par URL) */
+export function upsertWebRequest(req: Omit<WebRequest, "id" | "detected_at">): boolean {
+  const db = getDb();
+  const result = db.prepare(`
+    INSERT INTO web_requests (source, url, title, snippet, author, domain, location,
+      request_type, relevance_score, language, posted_at, status, guild_id, notes, contact)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(url) DO NOTHING
+  `).run(
+    req.source,
+    req.url,
+    req.title ?? null,
+    req.snippet ?? null,
+    req.author ?? null,
+    req.domain ?? "other",
+    req.location ?? null,
+    req.request_type ?? "vitrine",
+    req.relevance_score ?? 0,
+    req.language ?? "fr",
+    req.posted_at ?? null,
+    req.status ?? "NEW",
+    req.guild_id ?? null,
+    req.notes ?? null,
+    req.contact ?? null,
+  );
+  return result.changes > 0;
+}
+
+/** Récupère les web requests avec filtres */
+export function getWebRequests(opts: {
+  guild_id?: string;
+  domain?: string;
+  source?: string;
+  status?: string;
+  dateRange?: "day" | "week" | "month" | "all";
+  limit?: number;
+  minScore?: number;
+}): WebRequest[] {
+  const db = getDb();
+  const conditions: string[] = [];
+  const params: unknown[] = [];
+
+  if (opts.guild_id) { conditions.push("guild_id = ?"); params.push(opts.guild_id); }
+  if (opts.domain && opts.domain !== "all") { conditions.push("domain = ?"); params.push(opts.domain); }
+  if (opts.source && opts.source !== "all") { conditions.push("source = ?"); params.push(opts.source); }
+  if (opts.status) { conditions.push("status = ?"); params.push(opts.status); }
+  if (opts.minScore) { conditions.push("relevance_score >= ?"); params.push(opts.minScore); }
+
+  if (opts.dateRange && opts.dateRange !== "all") {
+    const interval = opts.dateRange === "day" ? "-1 day" : opts.dateRange === "week" ? "-7 days" : "-30 days";
+    conditions.push(`detected_at >= datetime('now', '${interval}')`);
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+  const limit = opts.limit ?? 50;
+
+  const rows = db.prepare(`
+    SELECT * FROM web_requests ${where}
+    ORDER BY relevance_score DESC, detected_at DESC
+    LIMIT ?
+  `).all(...params, limit) as WebRequest[];
+
+  return rows;
+}
+
+/** Met à jour le status d'une web request */
+export function updateWebRequestStatus(id: number, status: string, notes?: string): void {
+  const db = getDb();
+  if (notes) {
+    db.prepare("UPDATE web_requests SET status = ?, notes = ? WHERE id = ?").run(status, notes, id);
+  } else {
+    db.prepare("UPDATE web_requests SET status = ? WHERE id = ?").run(status, id);
+  }
+}
+
+/** Récupère une web request par ID */
+export function getWebRequestById(id: number): WebRequest | undefined {
+  const db = getDb();
+  return db.prepare("SELECT * FROM web_requests WHERE id = ?").get(id) as WebRequest | undefined;
+}
+
+/** Stats des web requests pour un guild */
+export function getWebRequestStats(guild_id: string): {
+  total: number;
+  newToday: number;
+  byDomain: Record<string, number>;
+  bySource: Record<string, number>;
+  byStatus: Record<string, number>;
+} {
+  const db = getDb();
+  const total = (db.prepare("SELECT COUNT(*) as c FROM web_requests WHERE guild_id = ?").get(guild_id) as { c: number }).c;
+  const newToday = (db.prepare(
+    "SELECT COUNT(*) as c FROM web_requests WHERE guild_id = ? AND detected_at >= date('now')"
+  ).get(guild_id) as { c: number }).c;
+
+  const domainRows = db.prepare(
+    "SELECT domain, COUNT(*) as c FROM web_requests WHERE guild_id = ? GROUP BY domain"
+  ).all(guild_id) as Array<{ domain: string; c: number }>;
+  const byDomain: Record<string, number> = {};
+  for (const r of domainRows) byDomain[r.domain] = r.c;
+
+  const sourceRows = db.prepare(
+    "SELECT source, COUNT(*) as c FROM web_requests WHERE guild_id = ? GROUP BY source"
+  ).all(guild_id) as Array<{ source: string; c: number }>;
+  const bySource: Record<string, number> = {};
+  for (const r of sourceRows) bySource[r.source] = r.c;
+
+  const statusRows = db.prepare(
+    "SELECT status, COUNT(*) as c FROM web_requests WHERE guild_id = ? GROUP BY status"
+  ).all(guild_id) as Array<{ status: string; c: number }>;
+  const byStatus: Record<string, number> = {};
+  for (const r of statusRows) byStatus[r.status] = r.c;
+
+  return { total, newToday, byDomain, bySource, byStatus };
+}
+
+/** Vérifie si une URL a déjà été vue */
+export function webRequestExists(url: string): boolean {
+  const db = getDb();
+  return !!db.prepare("SELECT 1 FROM web_requests WHERE url = ?").get(url);
 }
