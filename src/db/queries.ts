@@ -309,6 +309,15 @@ export function getActionableLeads(guildId: string): Lead[] {
   return rows.map(rowToLead);
 }
 
+/** Récupère tous les leads ayant un status donné (toutes guilds confondues) */
+export function getLeadsByStatus(status: string): Lead[] {
+  const db = getDb();
+  const rows = db
+    .prepare("SELECT * FROM leads WHERE status = ? ORDER BY lead_score DESC, scanned_at DESC")
+    .all(status) as Array<Record<string, unknown>>;
+  return rows.map(rowToLead);
+}
+
 export function savePreset(preset: FilterPreset): void {
   const db = getDb();
   db.prepare(

@@ -46,6 +46,7 @@ import { logger } from "../../utils/logger";
 import { deepScrapeEmails, deepScrapeEmailsDetailed } from "../../services/emailEnrich";
 import { sendEmail, canSendEmail } from "../../services/emailSender";
 import { config } from "../../config";
+import { postLeadToCallChannel } from "../callChannelEmbed";
 
 // ─── Simple status buttons (scan + call salon) ────
 
@@ -158,6 +159,14 @@ export async function handleButton(interaction: ButtonInteraction): Promise<void
       await interaction.reply({ content: `✅ Lead marqué comme **${newStatus}**.`, flags: MessageFlags.Ephemeral });
     }
 
+    // ─── Post dans le salon "À Appeler" si marqué CALL ─
+    if (newStatus === "CALL" && action === "lead_call") {
+      const fullLead = getLeadByPlaceId(placeId);
+      if (fullLead) {
+        await postLeadToCallChannel(interaction.client, fullLead, interaction.user.id);
+      }
+    }
+
     logger.info(`🏷️ Lead ${placeId} → ${newStatus} (par ${interaction.user.tag})`);
 
   } catch (error: unknown) {
@@ -234,6 +243,8 @@ async function handleCallQueueButton(interaction: ButtonInteraction): Promise<vo
             embeds: [embed],
             components: buttons,
           });
+          // Post dans le salon "À Appeler"
+          await postLeadToCallChannel(interaction.client, claimedLead, interaction.user.id);
           logger.info(`📞 Lead ${placeId} pris par ${interaction.user.tag}`);
         }
         return;

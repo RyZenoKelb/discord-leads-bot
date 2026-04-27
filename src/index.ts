@@ -50,6 +50,7 @@ import { handleModal } from "./bot/interactions/modals";
 import { startStatsPoster } from "./jobs/statsPoster";
 import { startFollowupChecker } from "./jobs/followupChecker";
 import { startDailyStatsPoster } from "./jobs/dailyStatsPoster";
+import { syncExistingCallLeads } from "./bot/callChannelEmbed";
 
 // ─── Client Discord ────────────────────────────────
 
@@ -104,6 +105,9 @@ client.once(Events.ClientReady, async (readyClient) => {
   startStatsPoster(client);
   startFollowupChecker(client);
   startDailyStatsPoster(client);
+
+  // Synchroniser les leads CALL existants dans le salon "À Appeler"
+  setTimeout(() => void syncExistingCallLeads(client), 5_000);
 
   // ─── Statut rotatif du bot ─────────────────────
   startRotatingStatus(client);
