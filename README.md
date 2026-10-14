@@ -71,7 +71,7 @@ The source code is shared for portfolio, recruitment and technical evaluation pu
 
 ## License
 
-Copyright © 2026 Gabriel Sdika.
+Copyright © 2026 RyZenoKelb.
 
 All rights reserved.
 
